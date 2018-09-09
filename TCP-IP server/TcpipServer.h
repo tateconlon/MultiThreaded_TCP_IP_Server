@@ -3,6 +3,7 @@
 #include <WS2tcpip.h>
 #include <vector>
 #include <thread>
+#include "LogFile.h"
 
 class TcpipServer
 {
@@ -32,6 +33,7 @@ public:
 private:
 	std::vector<SOCKET> allSockets;
 	char lastReadChar;
+	LogFiles log;
 };
 
 

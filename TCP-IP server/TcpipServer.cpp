@@ -9,6 +9,7 @@
 
 //TODO: clean up all "new" threads from heap
 //TODO: Seperate into UI class
+//TODO: Ask for name
 
 void TcpipServer::runUIThread() {
 	std::thread* ui = new std::thread(&TcpipServer::UI, this);
@@ -24,7 +25,6 @@ void TcpipServer::UI() {
 
 void TcpipServer::runServer()
 {
-
 	runUIThread();
 	//Initialize winsock
 	WSADATA wsData;
@@ -181,13 +181,14 @@ void TcpipServer::connect(SOCKET clientSocket, sockaddr_in client, int clientSiz
 		ZeroMemory(buf, 4096);
 
 		//wait for client to send data
-		int bytesRecieved = recv(clientSocket, buf, 4096, 0);
-		if (bytesRecieved == SOCKET_ERROR) {
+		int bytesReceived = recv(clientSocket, buf, 4096, 0);
+
+		if (bytesReceived == SOCKET_ERROR) {
 			std::cerr << "Error" << std::endl;
 			break;
 		}
 
-		if (bytesRecieved == 0) {
+		if (bytesReceived == 0) {
 			std::cout << "Client disconnected" << std::endl;
 			break;
 		}
@@ -206,35 +207,37 @@ void TcpipServer::connect(SOCKET clientSocket, sockaddr_in client, int clientSiz
 
 
 		//TODO: Not thread safe???
+
+		//When a client sends a message, it sends twice. The first message contains all the text,
+		//And the second sends just the /r/n. When echoing to the all the other clients, the /n/r doesn't need
+		//the name in front of it.
 		for (std::vector<SOCKET>::iterator i = allSockets.begin(); i != allSockets.end(); i++) {
 			if ((*i) != clientSocket) {
-				if (buf[0] == '\r' && buf[1] == '\n' && bytesRecieved == 2) {
-					int sentBytes = send((*i), buf, bytesRecieved + 1, 0);
-					if (sentBytes == SOCKET_ERROR) {
-						std::cerr << "Could not send " << buf << std::endl;
-					}
+				char* bytesToSend;
+				int bytesToSendLength;
+				bool needsToBeDeleted = false;
+				if (buf[0] == '\r' && buf[1] == '\n' && bytesReceived == 2) {
+					bytesToSend = buf;
+					bytesToSendLength = bytesReceived + 1;
 				}
 				else {
-					char* finalBuf = new char[bytesRecieved + names[nameInd].length() + 1];	//cannot dynamically allocate arrays without chars on stack, must use new and clean up
+					bytesToSendLength = bytesReceived + names[nameInd].length() + 1;
+					bytesToSend = new char[bytesToSendLength];	//cannot dynamically allocate arrays without chars on stack, must use new and clean up
+					needsToBeDeleted = true;
+
 					const char* nameStr = names[nameInd].c_str();
 					const char* newBuf = buf;
-					std::copy(nameStr, nameStr + names[nameInd].length(), finalBuf);
-					std::copy(newBuf, newBuf + bytesRecieved + 1, finalBuf + names[nameInd].length());
+					std::copy(nameStr, nameStr + names[nameInd].length(), bytesToSend);
+					std::copy(newBuf, newBuf + bytesReceived + 1, bytesToSend + names[nameInd].length());
 
-					int sentBytes = send((*i), finalBuf, names[nameInd].length() + bytesRecieved + 1, 0);
-					if (sentBytes == SOCKET_ERROR) {
-						std::cerr << "Could not send " << buf << std::endl;
-					}
-					delete finalBuf;
+				}
+
+				if (needsToBeDeleted) {
+					delete[] bytesToSend;
 				}
 			}
 		}
-
-		/*int sentBytes = send(clientSocket, buf, bytesRecieved + 1, 0);
-		if (sentBytes == SOCKET_ERROR) {
-			std::cerr << "Could not send " << buf << std::endl;
-
-		}*/
+		
 
 	}
 
@@ -275,7 +278,7 @@ void TcpipServer::connect(ConnectArgs c)
 	connect(c.clientSocket, c.client, c.clientSize);
 }
 
-TcpipServer::TcpipServer()
+TcpipServer::TcpipServer() : log("chats")
 {
 	//TODO: how to string into char buffer with \0 (Joel Splosky's blog post?)
 	std::string t = "Tate: ";
